@@ -1,0 +1,9 @@
+# iPad a-Shell 환경과 동일하게 고정 (a-Shell 내장 버전 기준)
+pandas==2.3.2
+numpy==2.3.2
+requests>=2.31
+beautifulsoup4>=4.12
+
+# 선택: KRX 회원 계정(KRX_ID/KRX_PW)이 있을 때만 설치. Python 3.10+ 필요.
+# 미설치 시 네이버 증권 데이터로 자동 동작합니다.
+# pykrx==1.2.9

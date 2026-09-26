@@ -1,0 +1,64 @@
+{
+  "llm": {
+    "models": ["gemini-2.5-flash", "gemini-3.8-flash", "gemini-3.5-flash-lite"],
+    "temperature": 0.3,
+    "timeout_sec": 120,
+    "max_retries": 3
+  },
+  "data": {
+    "provider": "auto",
+    "max_workers": 4,
+    "request_timeout_sec": 15,
+    "retries": 3
+  },
+  "funnel": {
+    "min_trading_value_krw": 5000000000,
+    "min_market_cap_krw": 100000000000,
+    "min_price_krw": 1000,
+    "stage1_keep": 150,
+    "stage2_keep": 50,
+    "leaders_per_market": 5,
+    "related_per_leader": 2,
+    "related_min_trading_value_krw": 1000000000,
+    "exclude_preferred": true,
+    "exclude_spac": true,
+    "exclude_codes": []
+  },
+  "quant": {
+    "history_days": 260,
+    "trend_days": 20,
+    "volume_spike_ratio": 2.0,
+    "rsi_period": 14,
+    "near_high_pct": 5.0,
+    "max_stop_pct": 12.0,
+    "top_picks": 5
+  },
+  "news": {
+    "per_stock_fetch": 10,
+    "per_stock_keep": 2,
+    "lookback_days": 3,
+    "ad_keywords": [
+      "무료 추천", "무료추천", "급등주 추천", "리딩방", "카톡방", "텔레그램", "오픈채팅",
+      "VIP", "수익 보장", "수익보장", "적중률", "목표 수익", "[광고]", "(광고)", "AD]",
+      "지금 바로 확인", "상한가 종목 공개", "세력주", "작전주", "무료 상담", "투자자문 신청"
+    ]
+  },
+  "dart": {
+    "morning_lookback_days": 1,
+    "evening_lookback_days": 3
+  },
+  "mail": {
+    "smtp_host": "smtp.gmail.com",
+    "smtp_port": 465,
+    "subject_prefix": "[주식 트렌드]"
+  },
+  "schedule": {
+    "morning_cutoff_hour": 12
+  },
+  "market_holidays": [
+    "2026-01-01", "2026-02-16", "2026-02-17", "2026-02-18", "2026-03-02",
+    "2026-05-01", "2026-05-05", "2026-05-25", "2026-06-03", "2026-08-17",
+    "2026-09-24", "2026-09-25", "2026-10-05", "2026-10-09", "2026-12-25",
+    "2026-12-31"
+  ]
+}
