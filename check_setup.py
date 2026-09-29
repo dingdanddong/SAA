@@ -69,17 +69,26 @@ def main(argv: list[str] | None = None) -> int:
             failures += 1
 
     if s["GEMINI_API_KEY"]:
-        try:
-            available = set(llm.list_models(s["GEMINI_API_KEY"]))
-            for model in cfg["llm"]["models"]:
-                line(OK if model in available else WARN, f"Gemini 모델 {model}", "사용 가능" if model in available else "목록에 없음")
-            flash = sorted(m for m in available if "flash" in m)
-            print(f"   사용 가능한 Flash 계열: {', '.join(flash[:12])}")
-            _, model = llm.generate_json(cfg, "JSON으로만 답한다.", '{"ping": "pong 을 값으로 하는 JSON을 반환"}')
-            line(OK, "Gemini 호출", f"{model} 응답 정상")
-        except Exception as exc:  # noqa: BLE001
-            line(FAIL, "Gemini", http.redact(exc))
+        # 모델 목록에 있어도 계정에 따라 호출이 막힐 수 있어(예: 2.5는 신규 사용자 차단) 모델마다 실제로 호출해 본다
+        working = []
+        for model in cfg["llm"]["models"]:
+            one = {**cfg, "llm": {**cfg["llm"], "models": [model], "max_retries": 1}}
+            try:
+                llm.generate_json(one, "JSON으로만 답한다.", '{"ping": "pong 을 값으로 하는 JSON을 반환"}')
+                line(OK, f"Gemini 모델 {model}", "호출 정상")
+                working.append(model)
+            except Exception as exc:  # noqa: BLE001
+                line(WARN, f"Gemini 모델 {model}", http.redact(exc)[:160])
+        if not working:
+            line(FAIL, "Gemini", "설정된 모델 모두 호출 실패 — config.json 의 llm.models 를 바꾸세요")
             failures += 1
+            try:
+                flash = sorted(m for m in llm.list_models(s["GEMINI_API_KEY"]) if "flash" in m)
+                print(f"   목록에 있는 Flash 계열: {', '.join(flash)}")
+            except Exception:  # noqa: BLE001
+                pass
+        elif working[0] != cfg["llm"]["models"][0]:
+            line(WARN, "Gemini 모델 순서", f"첫 번째 모델이 막혀 있음 — llm.models 맨 앞을 {working[0]} 로 바꾸면 호출 1회를 아낌")
 
     ok, reason = krx.available()
     if ok:
