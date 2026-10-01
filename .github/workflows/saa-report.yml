@@ -1,0 +1,74 @@
+name: SAA 리포트
+
+on:
+  schedule:
+    - cron: "30 23 * * 0-4" # 평일 08:30 KST 모닝 브리프
+    - cron: "30 6 * * 1-5" # 평일 15:30 KST 결산 리포트
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 실행 모드
+        type: choice
+        options: [evening, morning]
+        default: evening
+      dry_run:
+        description: 메일을 보내지 않고 리포트만 생성
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.mode || (github.event.schedule == '30 23 * * 0-4' && 'morning' || 'evening') }}
+      EXTRA_ARGS: ${{ github.event_name == 'workflow_dispatch' && format('--force {0}', inputs.dry_run && '--dry-run' || '') || '' }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      DART_API_KEY: ${{ secrets.DART_API_KEY }}
+      GMAIL_USER: ${{ secrets.GMAIL_USER }}
+      GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+      REPORT_TO: ${{ secrets.REPORT_TO }}
+      ADMIN_TO: ${{ secrets.ADMIN_TO }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      # 전일 시나리오 검증·모닝 갭 후보에 쓰는 data/ 를 실행 간에 이어받는다
+      - name: 이전 실행 기록 복원
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            data
+            !data/outbox
+          key: saa-data-${{ github.run_id }}
+          restore-keys: saa-data-
+
+      - name: 리포트 실행
+        run: python main_pipeline.py --mode "$MODE" $EXTRA_ARGS
+
+      - name: 실행 기록 저장
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            data
+            !data/outbox
+          key: saa-data-${{ github.run_id }}
+
+      - name: 리포트 HTML 보관
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: report-${{ github.run_id }}
+          path: data/outbox
+          if-no-files-found: ignore
+          retention-days: 7
