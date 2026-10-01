@@ -208,7 +208,7 @@ class QuantAgent:
 
     @staticmethod
     def _related_reason(r: dict, theme: dict) -> str:
-        parts = [f"동일 업종({theme['theme']})", f"거래대금 {fmt.eok(r.get('trading_value'), signed=False)}"]
+        parts = [r.get("relation") or f"동일 업종({theme['theme']})", f"거래대금 {fmt.eok(r.get('trading_value'), signed=False)}"]
         if r.get("supply_net") is not None:
             parts.append(f"외인+기관 {fmt.eok(r['supply_net'])}")
         return " · ".join(parts)

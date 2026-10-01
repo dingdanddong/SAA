@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 
 from stock_agent import funnel, report, validation
+from stock_agent.agents.news import NewsAgent
 from stock_agent.agents.quant import QuantAgent
 from stock_agent.config import load_config
 
@@ -32,13 +33,16 @@ def stock(code, name, market="KOSPI", close=50_000, tv_eok=100, cap_eok=5_000, *
 
 class FakeResolver:
     def __init__(self, groups):
-        self.groups = groups  # industry name -> [rows]
+        self.groups = groups  # 업종 코드 -> (업종명, [rows])
         self.used_fallback = False
 
+    def industry(self, ind_code):
+        return self.groups[ind_code]
+
     def resolve(self, code):
-        for name, members in self.groups.items():
+        for ind_code, (name, members) in self.groups.items():
             if any(m["code"] == code for m in members):
-                return f"fake:{name}", name, members
+                return f"naver:{ind_code}", name, members
         return None
 
 
@@ -46,44 +50,64 @@ class FunnelTest(unittest.TestCase):
     def setUp(self):
         self.cfg = load_config()
 
-    def test_stage1_filters(self):
-        universe = [
-            stock("000010", "정상A", tv_eok=300),
-            stock("000020", "정상B", tv_eok=200),
-            stock("000025", "우선주", tv_eok=900),          # 끝자리 5 → 우선주
-            stock("000030", "하나스팩1호", tv_eok=900),
-            stock("000040", "동전주", close=800, tv_eok=900),
-            stock("000050", "소형주", cap_eok=500, tv_eok=900),
-            stock("000060", "거래부족", tv_eok=10),
-            stock("000070", "관리종목", tv_eok=900),
-            stock("000080", "ETF", tv_eok=900, end_type="etf"),
-            stock("000090", "정지", tv_eok=900, trade_stop=True),
+    def test_kospi_top_clusters(self):
+        self.cfg["funnel"].update(top_leaders=3, related_industries={"B": ["C", "B"]})
+        k = [stock(f"3000{i}0", f"반도체{i}", "KOSDAQ", cap_eok=cap) for i, cap in enumerate((9000, 8000, 7000, 6000))]
+        brokers = [stock("400010", "증권1", "KOSDAQ", cap_eok=4000), stock("400020", "증권2", "KOSDAQ", cap_eok=2000)]
+        kospi = [
+            stock("100000", "삼성", cap_eok=1_000_000),
+            stock("100010", "하이닉스", cap_eok=900_000),
+            stock("100020", "은행", cap_eok=500_000),
+            stock("100025", "삼성우", cap_eok=2_000_000),                       # 우선주 제외
+            stock("100030", "ETF", cap_eok=3_000_000, end_type="etf"),          # ETF 제외
+            stock("100040", "작은회사", cap_eok=2_000),
         ]
-        out = funnel.stage1_hard_filter(universe, {"000070"}, self.cfg)
-        self.assertEqual([r["name"] for r in out], ["정상A", "정상B"])
-
-    def test_stage2_supply_rank(self):
-        pool = [stock("000010", "A"), stock("000020", "B"), stock("000030", "C")]
-        flows = {
-            "000010": {"foreign_value": 10 * EOK, "organ_value": -5 * EOK},
-            "000020": {"foreign_value": 30 * EOK, "organ_value": 20 * EOK},
-        }
-        out = funnel.stage2_supply_rank(pool, flows, self.cfg)
-        self.assertEqual([r["name"] for r in out], ["B", "A"])  # C는 수급 데이터 없음
-        self.assertAlmostEqual(out[0]["supply_ratio"], 50.0)
-
-    def test_stage3_clusters_unique(self):
-        semis = [stock("100000", "반도체대장", tv_eok=900), stock("100010", "장비1", tv_eok=50), stock("100020", "장비2", tv_eok=40)]
-        semis2 = [stock("100030", "반도체2등", tv_eok=800)] + semis[1:]  # 같은 업종 → 두 번째 리더는 건너뜀
-        bio = [stock("200000", "바이오대장", "KOSDAQ", tv_eok=500), stock("200010", "바이오1", "KOSDAQ"), stock("200020", "바이오2", "KOSDAQ")]
-        resolver = FakeResolver({"반도체": semis + semis2[:1], "바이오": bio})
-        pool150 = semis + semis2[:1] + bio
-        pool50 = [semis[0], semis2[0], bio[0]]
-        themes = funnel.stage3_theme_clusters(pool50, pool150, resolver, set(), self.cfg)
-        self.assertEqual([(t["market"], t["leader"]["name"]) for t in themes], [("KOSPI", "반도체대장"), ("KOSDAQ", "바이오대장")])
+        universe = kospi + k + brokers
+        resolver = FakeResolver({"A": ("반도체", kospi[:2] + k), "B": ("은행", [kospi[2]]), "C": ("증권", brokers)})
+        themes = funnel.kospi_top_clusters(universe, set(), resolver, self.cfg)
+        self.assertEqual([(t["theme_id"], t["leader"]["name"]) for t in themes], [(1, "삼성"), (2, "하이닉스"), (3, "은행")])
+        self.assertEqual([r["name"] for r in themes[0]["related"]], ["반도체0", "반도체1"])   # 동일 업종 시총 순
+        self.assertEqual([r["name"] for r in themes[1]["related"]], ["반도체2", "반도체3"])   # 중복 없이 다음 순위
+        self.assertEqual([r["name"] for r in themes[2]["related"]], ["증권1", "증권2"])       # 인접 업종 대체
+        self.assertTrue(themes[2]["related"][0]["relation"].startswith("인접"))
         codes = [s["code"] for s in funnel.selected_stocks(themes)]
-        self.assertEqual(len(codes), len(set(codes)))
-        self.assertEqual(len(codes), 6)
+        self.assertEqual((len(codes), len(set(codes))), (9, 9))
+
+    def test_cluster_skipped_without_enough_kosdaq(self):
+        self.cfg["funnel"]["top_leaders"] = 1
+        leader = stock("100000", "삼성", cap_eok=1_000_000)
+        resolver = FakeResolver({"A": ("반도체", [leader, stock("300000", "하나뿐", "KOSDAQ")])})
+        self.assertEqual(funnel.kospi_top_clusters([leader], set(), resolver, self.cfg), [])
+
+
+class ImageTest(unittest.TestCase):
+    def test_rate_image(self):
+        from stock_agent.llm import LLMUnavailable
+
+        agent = NewsAgent(load_config())
+        stocks = [{"code": c, "name": c} for c in "ABCD"]
+
+        def bundles():
+            return {
+                "A": {"titles": ["a1", "a2", "a3", "a4"]},
+                "B": {"titles": ["유상증자 결정에 주가 급락", "대규모 공급계약 체결"]},
+                "C": {"titles": []},
+                "D": {"titles": ["유상증자 결정에 주가 급락"]},
+            }
+
+        raw = {"results": [{"code": "A", "labels": ["긍정", "긍정", "중립", "부정"]}, {"code": "B", "labels": ["긍정"]}]}
+        b = bundles()
+        with mock.patch("stock_agent.llm.generate_json", return_value=(raw, "m")):
+            agent.rate_image(b, stocks)
+        self.assertEqual((b["A"]["image"]["label"], b["A"]["image"]["source"], b["A"]["image"]["pos"]), ("긍정", "ai", 2))
+        self.assertEqual((b["B"]["image"]["source"], b["B"]["image"]["neg"], b["B"]["image"]["label"]), ("keyword", 1, "중립"))  # 개수 불일치 → 키워드
+        self.assertEqual((b["C"]["image"]["total"], b["C"]["image"]["label"]), (0, "중립"))
+        self.assertEqual((b["D"]["image"]["neg"], b["D"]["image"]["label"]), (1, "중립"))     # 기사 3건 미만 → 중립
+
+        b = bundles()
+        with mock.patch("stock_agent.llm.generate_json", side_effect=LLMUnavailable("quota")):
+            agent.rate_image(b, stocks)
+        self.assertTrue(all(v["image"]["source"] == "keyword" for v in b.values()))
 
 
 class ForecastTest(unittest.TestCase):
@@ -170,7 +194,8 @@ class ReportTest(unittest.TestCase):
                                    "band_high": 52_000, "key_level": 48_000, "band_source": "ai", "observation": "관찰 문장",
                                    "leader_view": "평가", "confidence": "보통"}}}
         ctx = {"trade_date": "20260923", "flow_date": "20260923", "provider": "naver", "indices": [], "themes": themes,
-               "techs": {}, "news": {}, "forecast": forecast, "picks": [], "validation": {"available": False}, "warnings": [], "notes": []}
+               "techs": {}, "news": {"000020": {"image": {"label": "긍정", "pos": 2, "neu": 1, "neg": 0, "total": 3, "source": "ai"}}},
+               "forecast": forecast, "picks": [], "validation": {"available": False}, "warnings": [], "notes": []}
         html, text = report.render_evening(ctx)
         self.assertIn("대장&lt;주&gt;", html)   # HTML 이스케이프
         self.assertIn("관찰 포인트", html)
@@ -178,6 +203,10 @@ class ReportTest(unittest.TestCase):
         self.assertIn('<meta charset="utf-8">', html)
         self.assertNotIn("축소 리포트", html)
         self.assertIn("관찰 문장", text)
+        self.assertIn("코스피 시총 1위", html)
+        self.assertIn("시총 5,000억", html)
+        self.assertIn("이미지 긍정", html)
+        self.assertIn("이미지 긍정", text)
 
 
 if __name__ == "__main__":

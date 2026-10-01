@@ -12,17 +12,20 @@
     "retries": 3
   },
   "funnel": {
-    "min_trading_value_krw": 5000000000,
+    "top_leaders": 10,
+    "related_per_leader": 2,
     "min_market_cap_krw": 100000000000,
     "min_price_krw": 1000,
-    "stage1_keep": 150,
-    "stage2_keep": 50,
-    "leaders_per_market": 5,
-    "related_per_leader": 2,
-    "related_min_trading_value_krw": 1000000000,
+    "related_min_trading_value_krw": 100000000,
     "exclude_preferred": true,
     "exclude_spac": true,
-    "exclude_codes": []
+    "exclude_codes": [],
+    "related_industries": {
+      "273": ["270", "273"],
+      "301": ["321", "319"],
+      "330": ["315", "321", "319"],
+      "276": ["276", "279"]
+    }
   },
   "quant": {
     "history_days": 260,
@@ -37,6 +40,7 @@
     "per_stock_fetch": 10,
     "per_stock_keep": 2,
     "lookback_days": 3,
+    "image_lookback_days": 14,
     "ad_keywords": [
       "무료 추천", "무료추천", "급등주 추천", "리딩방", "카톡방", "텔레그램", "오픈채팅",
       "VIP", "수익 보장", "수익보장", "적중률", "목표 수익", "[광고]", "(광고)", "AD]",

@@ -76,30 +76,30 @@ class Orchestrator:
             log.warning("KIND 관리종목 조회 실패: %s", redact(exc))
             self.warnings.append("KIND 관리종목 목록 조회 실패 — 관리종목 제외 필터 없이 진행")
 
-        # Stage 1~2
-        pool150 = funnel.stage1_hard_filter(universe, excluded, self.cfg)
-        flows = self._flows(provider, pool150, trade_date)
-        pool50 = funnel.stage2_supply_rank(pool150, flows, self.cfg)
-        if not pool50:
-            self.warnings.append("수급 데이터를 받지 못해 거래대금 순으로 대체")
-            pool50 = pool150[: self.cfg["funnel"]["stage2_keep"]]
-        flow_dates = {r.get("flow_date") for r in pool50 if r.get("flow_date")}
-        flow_date = max(flow_dates) if flow_dates else ""
-
-        # Stage 3
+        # 선정: 코스피 시총 TOP N + 동일/인접 업종 코스닥 연관주
         resolver = funnel.IndustryResolver(universe)
-        themes = funnel.stage3_theme_clusters(pool50, pool150, resolver, excluded, self.cfg)
+        themes = funnel.kospi_top_clusters(universe, excluded, resolver, self.cfg)
         if resolver.used_fallback:
             self.notes.append("일부 업종 분류는 KIND 업종표로 대체")
         if not themes:
-            raise RuntimeError("테마 클러스터를 하나도 만들지 못함 (업종 조회 전면 실패)")
+            raise RuntimeError("선정된 종목이 없음 (업종 조회 전면 실패)")
+        if len(themes) < self.cfg["funnel"]["top_leaders"]:
+            self.warnings.append(f"연관 코스닥 종목을 찾지 못해 시총 상위 {self.cfg['funnel']['top_leaders'] - len(themes)}개 기업 제외")
         selected = funnel.selected_stocks(themes)
-        extra = [r for r in pool50 if r["code"] not in {s["code"] for s in selected}]
+        flows = self._flows(provider, selected, trade_date)
+        funnel.attach_flows(selected, flows)
+        flow_dates = {r.get("flow_date") for r in selected if r.get("flow_date")}
+        flow_date = max(flow_dates) if flow_dates else ""
 
-        # Stage 4 (Agent 2) ∥ 기술·수급 분석 (Agent 3) — 비동기 병렬
+        # 뉴스·기업 이미지 (Agent 2) ∥ 기술·수급 분석 (Agent 3) — 비동기 병렬
+        def news_job() -> dict:
+            bundles = self.news_agent.collect(selected, trade_date)
+            self.news_agent.rate_image(bundles, selected, self.use_llm)
+            return bundles
+
         with ThreadPoolExecutor(max_workers=2) as pool:
-            fut_news = pool.submit(self.news_agent.collect, selected, trade_date)
-            fut_quant = pool.submit(self.quant_agent.analyze, selected + extra, flows)
+            fut_news = pool.submit(news_job)
+            fut_quant = pool.submit(self.quant_agent.analyze, selected, flows)
             news = fut_news.result()
             techs = fut_quant.result()
         self._note_source_status()
@@ -120,7 +120,7 @@ class Orchestrator:
         payloads = self.quant_agent.build_payloads(themes, techs, news)
         forecast = self.quant_agent.forecast(payloads, techs, market_ctx, self.use_llm)
         validation.save_scenarios(trade_date, themes, forecast)
-        picks = self.quant_agent.top_picks(pool50 + selected, techs)
+        picks = self.quant_agent.top_picks(selected, techs)
 
         ctx = {
             "trade_date": trade_date,

@@ -1,15 +1,19 @@
-"""Agent 2 — 정보 스크래퍼 (News & Disclosure). LLM 토큰 0.
+"""Agent 2 — 정보 스크래퍼 (News & Disclosure).
 
 - 종목별 뉴스: 네이버 증권 → 광고성/찌라시 키워드 배제 → [헤드라인 + 핵심 2문장]
 - 공시: DART Open API (공식) 우선
 - 단기 호재/악재 감성 스코어: 키워드 사전 기반 (−1 ~ +1)
+- 기업 이미지(긍정/중립/부정): 기사 제목 전체를 Gemini 1회 호출로 분류, 실패 시 키워드 분류로 대체
 """
 from __future__ import annotations
 
+import json
 import logging
 import re
+from collections import Counter
 from datetime import timedelta
 
+from .. import llm
 from .. import market_calendar as cal
 from ..http import redact
 from ..parallel import pmap
@@ -37,6 +41,18 @@ DISCLOSURE_NEGATIVE = (
     "관리종목", "매매거래정지", "상장폐지", "영업정지", "회생절차", "계약해지", "공급계약해지", "자기주식처분",
 )
 NEUTRAL_MATERIAL = ("잠정실적", "영업(잠정)실적", "최대주주변경", "합병", "분할")
+
+IMAGE_LABELS = ("긍정", "중립", "부정")
+MIN_IMAGE_ARTICLES = 3  # 기사가 이보다 적으면 판단 근거가 부족해 중립으로 둔다
+_KEYWORD_TO_IMAGE = {"호재": "긍정", "중립": "중립", "악재": "부정"}
+
+SYSTEM_IMAGE = """너는 한국 기업 뉴스 제목을 분류하는 보조자다.
+각 기사 제목이 해당 기업의 대중적 이미지(평판)에 주는 인상을 '긍정', '중립', '부정' 중 하나로 분류한다.
+제목에 적힌 내용만 근거로 하고, 없는 사실을 추측하지 않는다. 시장 전반 뉴스나 판단이 애매한 제목은 '중립'으로 둔다.
+각 종목의 labels 는 입력 titles 와 같은 개수·같은 순서여야 한다.
+출력은 output_format 과 같은 구조의 JSON 객체 하나만 반환한다."""
+
+OUTPUT_IMAGE = {"results": [{"code": "종목코드", "labels": ["긍정 | 중립 | 부정"]}]}
 
 _BYLINE = re.compile(r"^\s*[\[\(【][^\]\)】]{0,40}[\]\)】]\s*")
 _REPORTER = re.compile(r"[가-힣]{2,4}\s*(기자|특파원|객원기자)\s*=?\s*")
@@ -96,6 +112,7 @@ class NewsAgent:
         codes = [s["code"] for s in stocks]
         trade_day = cal.parse_ymd(trade_date)
         cutoff = cal.ymd(trade_day - timedelta(days=ncfg["lookback_days"])) + "0000"
+        image_cutoff = cal.ymd(trade_day - timedelta(days=ncfg["image_lookback_days"])) + "0000"
 
         news_ok, news_fail = pmap(lambda c: naver.stock_news(c, ncfg["per_stock_fetch"]), codes, workers, "종목 뉴스")
         self.status["news"] = "ok" if not news_fail else ("failed" if not news_ok else "partial")
@@ -118,7 +135,9 @@ class NewsAgent:
 
         bundles = {}
         for code in codes:
-            headlines = self._headlines(news_ok.get(code, []), cutoff)
+            all_news = self._headlines(news_ok.get(code, []), image_cutoff)
+            recent = [h for h in all_news if not h["datetime"] or h["datetime"] >= cutoff]
+            headlines = recent[: ncfg["per_stock_keep"]]
             discl = [
                 {
                     "title": d["report_nm"],
@@ -130,8 +149,47 @@ class NewsAgent:
             ]
             scores = [h["sentiment"] for h in headlines] + [d["sentiment"] for d in discl if d["sentiment"]]
             score = round(sum(scores) / len(scores), 2) if scores else 0.0
-            bundles[code] = {"headlines": headlines, "disclosures": discl, "sentiment": score, "label": label(score)}
+            bundles[code] = {
+                "headlines": headlines,
+                "titles": [h["title"] for h in all_news],
+                "disclosures": discl,
+                "sentiment": score,
+                "label": label(score),
+            }
         return bundles
+
+    def rate_image(self, bundles: dict[str, dict], stocks: list[dict], use_llm: bool = True) -> None:
+        """종목별 기사 제목을 긍정/중립/부정으로 분류해 bundles[code]['image'] 에 넣는다."""
+        ai: dict[str, list] = {}
+        todo = [
+            {"code": s["code"], "name": s["name"], "titles": bundles[s["code"]]["titles"]}
+            for s in stocks
+            if bundles[s["code"]]["titles"]
+        ]
+        if use_llm and todo:
+            user = json.dumps({"stocks": todo, "output_format": OUTPUT_IMAGE}, ensure_ascii=False)
+            try:
+                raw, _ = llm.generate_json(self.cfg, SYSTEM_IMAGE, user)
+                ai = {r["code"]: r["labels"] for r in raw["results"]}
+            except (llm.LLMUnavailable, KeyError, TypeError) as exc:
+                log.warning("기업 이미지 AI 분류 실패 → 키워드 분류로 대체: %s", exc)
+        for s in stocks:
+            b = bundles[s["code"]]
+            labels, source = ai.get(s["code"]), "ai"
+            if not (
+                isinstance(labels, list) and len(labels) == len(b["titles"]) and all(x in IMAGE_LABELS for x in labels)
+            ):
+                labels, source = [_KEYWORD_TO_IMAGE[label(sentiment_score(t))] for t in b["titles"]], "keyword"
+            n, total = Counter(labels), len(labels)
+            score = (n["긍정"] - n["부정"]) / total if total else 0.0
+            b["image"] = {
+                "label": _KEYWORD_TO_IMAGE[label(score)] if total >= MIN_IMAGE_ARTICLES else "중립",
+                "pos": n["긍정"],
+                "neu": n["중립"],
+                "neg": n["부정"],
+                "total": total,
+                "source": source,
+            }
 
     def _headlines(self, items: list[dict], cutoff: str) -> list[dict]:
         ncfg = self.cfg["news"]
@@ -156,8 +214,6 @@ class NewsAgent:
                     "sentiment": sentiment_score(it["title"], it["body"]),
                 }
             )
-            if len(out) >= ncfg["per_stock_keep"]:
-                break
         return out
 
     # ---- 모닝(08:30): 개장 전 특징 공시 ------------------------------------------

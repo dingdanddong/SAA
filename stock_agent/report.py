@@ -106,6 +106,24 @@ def _news_links(bundle: dict | None) -> str:
     return "<br>".join(items)
 
 
+def _image_badge(img: dict | None) -> str:
+    if not img:
+        return ""
+    color = {"긍정": UP, "부정": DOWN}.get(img["label"], MUTED)
+    return f'<span style="color:{color};font-weight:600">이미지 {_e(img["label"])}</span>'
+
+
+def _image_counts(img: dict | None) -> str:
+    if not img:
+        return ""
+    if not img["total"]:
+        return " · 기사 없음"
+    note = f" · 기사 {img['total']}건 (긍정 {img['pos']}·중립 {img['neu']}·부정 {img['neg']})"
+    if img["total"] < 3:
+        note += " 표본 적음"
+    return note + (" 키워드 분류" if img["source"] == "keyword" else "")
+
+
 def _index_line(indices: list[dict]) -> str:
     return " &nbsp;|&nbsp; ".join(
         f"<b>{_e(i['name'])}</b> {i['close']:,.2f} {_chg(i.get('change_pct'))}" if i.get("close") else f"<b>{_e(i['name'])}</b> -"
@@ -138,7 +156,10 @@ def render_evening(ctx: dict) -> tuple[str, str]:
     themes_html = ""
     for th in ctx["themes"]:
         themes_html += _theme_card(th, ctx["techs"], ctx["news"], forecast["themes"].get(th["theme_id"], {}))
-    body += _section(f"테마 클러스터 {len(ctx['themes'])}개 · {sum(1 + len(t['related']) for t in ctx['themes'])}종목", themes_html)
+    body += _section(
+        f"코스피 시총 TOP {len(ctx['themes'])} + 연관 코스닥 · {sum(1 + len(t['related']) for t in ctx['themes'])}종목",
+        themes_html,
+    )
 
     # 52주 신고가 근접 / 눌림목
     if ctx.get("picks"):
@@ -167,7 +188,11 @@ def render_evening(ctx: dict) -> tuple[str, str]:
     body += _section("전일 시나리오 적중 검증", _validation_html(ctx.get("validation") or {}))
 
     # 데이터 노트
-    notes = [f"데이터 기준일 {_date_label(ctx['trade_date'])}", f"시세·수급 소스: {_e(ctx['provider'])}"]
+    notes = [
+        f"데이터 기준일 {_date_label(ctx['trade_date'])}",
+        f"시세·수급 소스: {_e(ctx['provider'])}",
+        "기업 이미지는 최근 기사 제목 기준 분류이며 투자 판단 자료가 아님",
+    ]
     if ctx.get("flow_date") and ctx["flow_date"] != ctx["trade_date"]:
         notes.append(f"수급 기준일 {_e(ctx['flow_date'])} (당일 확정치 미반영)")
     notes += [_e(n) for n in ctx.get("notes", [])]
@@ -189,9 +214,12 @@ def _theme_card(th: dict, techs: dict, news: dict, fc: dict) -> str:
     for role, s in members:
         t = techs.get(s["code"], {})
         focus = " 🎯" if fc.get("focus_code") == s["code"] else ""
+        img = (news.get(s["code"]) or {}).get("image")
+        rel = " · 인접 업종" if str(s.get("relation", "")).startswith("인접") else ""
         rows.append(
             [
-                f"<b>{_e(s['name'])}</b>{focus}<br><span style='color:{MUTED};font-size:11px'>{role} · {_e(s['code'])}</span>",
+                f"<b>{_e(s['name'])}</b>{focus} <span style='color:{MUTED};font-size:12px'>시총 {_e(fmt.cap(s.get('market_cap')))}</span> "
+                f"{_image_badge(img)}<br><span style='color:{MUTED};font-size:11px'>{role} · {_e(s['code'])}{rel}{_e(_image_counts(img))}</span>",
                 f"{fmt.price(s.get('close'))}<br>{_chg(s.get('change_pct'))}",
                 f"{_e(t.get('tech_text', '지표 없음'))}<br><span style='color:{MUTED}'>{_e(t.get('supply_text', ''))}</span>",
                 f"{fmt.price(t.get('support'))}<br>{fmt.price(t.get('resistance'))}",
@@ -226,8 +254,8 @@ def _theme_card(th: dict, techs: dict, news: dict, fc: dict) -> str:
 
     return (
         f'<div style="border:1px solid {BORDER};border-radius:8px;padding:12px 14px;margin:14px 0">'
-        f'<div style="font-weight:700;font-size:15px;margin-bottom:6px">🔥 {_e(th["market"])} 주도 테마 '
-        f'{th["theme_id"]}: [{_e(th["theme"])}]</div>'
+        f'<div style="font-weight:700;font-size:15px;margin-bottom:6px">🔥 코스피 시총 {th["theme_id"]}위 · '
+        f'{_e(leader["name"])} [{_e(th["theme"])}]</div>'
         f"{table}"
         + "".join(f'<div style="margin:6px 0">{line}</div>' for line in lines)
         + "</div>"
@@ -271,11 +299,17 @@ def _evening_text(ctx: dict) -> str:
     fc_all = ctx["forecast"]["themes"]
     if ctx["forecast"]["mode"] != "ai":
         lines.append(f"* 축소 리포트: {ctx['forecast']['reason']}")
+    news = ctx.get("news", {})
+
+    def tag(x: dict) -> str:
+        img = (news.get(x["code"]) or {}).get("image")
+        return f"시총 {fmt.cap(x.get('market_cap'))}, 이미지 {img['label'] if img else '-'}"
+
     for th in ctx["themes"]:
         leader = th["leader"]
-        lines.append(f"{th['market']} 주도 테마 {th['theme_id']}: [{th['theme']}]")
-        lines.append(f" - 대장주: {leader['name']} ({fmt.price(leader.get('close'))}원 / {fmt.arrow(leader.get('change_pct'))})")
-        lines.append(" - 연관주: " + ", ".join(f"{r['name']}({fmt.arrow(r.get('change_pct'))})" for r in th["related"]))
+        lines.append(f"코스피 시총 {th['theme_id']}위: {leader['name']} [{th['theme']}]")
+        lines.append(f" - 대장주: {leader['name']} ({tag(leader)} / {fmt.price(leader.get('close'))}원 / {fmt.arrow(leader.get('change_pct'))})")
+        lines.append(" - 연관주: " + ", ".join(f"{r['name']}({tag(r)} / {fmt.arrow(r.get('change_pct'))})" for r in th["related"]))
         fc = fc_all.get(th["theme_id"], {})
         if fc.get("observation"):
             lines.append(f" - 관찰 포인트: {fc['observation']} {OBSERVATION_NOTE}")

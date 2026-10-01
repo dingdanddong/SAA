@@ -8,9 +8,9 @@ iPad a-Shell에서 단축어 자동화로 평일 08:30 / 15:40에 실행되고, 
 | 계획서 | 구현 |
 |---|---|
 | Agent 1 Orchestrator (스케줄·취합·렌더링·에러 알림) | `stock_agent/agents/orchestrator.py` |
-| Agent 2 News & Disclosure (뉴스 정제, DART 공시, 감성 스코어) | `stock_agent/agents/news.py` |
+| Agent 2 News & Disclosure (뉴스 정제, DART 공시, 감성 스코어, 기업 이미지 긍정/중립/부정) | `stock_agent/agents/news.py` |
 | Agent 3 Quant & Forecast (정배열·거래량·RSI·수급·지지/저항·손절, Gemini 시나리오) | `stock_agent/agents/quant.py`, `stock_agent/indicators.py` |
-| Stage 1~3 역피라미드 필터 (2,500 → 150 → 50 → 30) | `stock_agent/funnel.py` |
+| 종목 선정: 코스피 시총 TOP 10 + 업종별 코스닥 연관주 2개 (30종목) | `stock_agent/funnel.py` |
 | Stage 5 Theme Cluster Payload, 관찰형 프롬프트 | `quant.py` `build_payloads` / `SYSTEM_EVENING` |
 | Stage 6 전일 시나리오 적중 태깅 | `stock_agent/validation.py` → `data/accuracy_log.csv` |
 | 하트비트 메일 | `heartbeat.py` |
@@ -25,8 +25,10 @@ iPad a-Shell에서 단축어 자동화로 평일 08:30 / 15:40에 실행되고, 
 1. **KRX 데이터: 네이버 증권이 기본.** KRX 정보데이터시스템이 2025-12-27부터 로그인 필수로 바뀌어, pykrx 1.2.9는 KRX 회원 계정(`KRX_ID`/`KRX_PW`)이 있어야 동작합니다. 그래서 KRX 계정이 있으면 pykrx를 쓰고, 없거나 실패하면 네이버 증권 데이터로 자동 대체합니다. pykrx 경로는 계정이 없어 실제로 테스트하지 못했습니다.
 2. **Gemini 모델: 순서대로 대체.** Google이 2.5 모델 접근을 "과거 사용 이력이 있는 사용자"로 제한했습니다. 그래서 `config.json`의 `llm.models`를 `gemini-2.5-flash → gemini-3.8-flash → gemini-3.5-flash-lite` 순서로 시도합니다. 실제로 쓸 수 있는 모델은 `python3 check_setup.py`로 확인하세요.
 3. **Gemini SDK 대신 REST 직접 호출.** a-Shell에는 컴파일된 확장이 필요한 `google-genai`(pydantic, grpc)를 설치할 수 없어서 `requests`로 호출합니다.
-4. **투자주의환기종목은 별도로 제외하지 않습니다.** KIND 관리종목과 거래정지 종목만 제외합니다. 환기종목은 코스닥 소형주라 대부분 시총 1,000억 / 거래대금 50억 필터에서 걸러집니다. 추가로 뺄 종목은 `config.json`의 `funnel.exclude_codes`에 넣으세요.
+4. **투자주의환기종목은 별도로 제외하지 않습니다.** KIND 관리종목과 거래정지 종목만 제외합니다. 환기종목은 코스닥 소형주라 대부분 연관주 조건(시총 1,000억 이상, 거래대금 1억 이상)에서 걸러집니다. 추가로 뺄 종목은 `config.json`의 `funnel.exclude_codes`에 넣으세요.
 5. **테마 이름은 네이버 업종명입니다**(예: "반도체와반도체장비"). 업종 조회에 실패하면 KIND 상장법인 업종표로 대체합니다.
+6. **연관 코스닥 종목 = 같은 네이버 업종의 코스닥 보통주 중 시총 상위**이고, 종목은 중복되지 않습니다. 은행·생명보험·복합기업·자동차처럼 코스닥 종목이 부족한 업종은 `config.json`의 `funnel.related_industries`에 적은 인접 업종(증권·기타금융·건설·자동차부품 등)을 순서대로 찾으며, 리포트에 "인접 업종"으로 표시됩니다.
+7. **기업 이미지는 최근 14일 기사 제목(종목당 최대 10건)을 Gemini 1회 호출로 분류**한 결과입니다. 기사가 3건 미만이면 중립으로 두고, AI 호출이 실패하면 키워드 사전으로 대체합니다.
 
 ## 폴더 구조
 
@@ -114,7 +116,7 @@ python3 main_pipeline.py --mode evening --dry-run --force   # 메일 없이 data
   - 갭 상승 관찰 후보: 호재 공시와 전일 결산의 강세·수급 종목
 - **15:40 결산**
   - 시장 개요
-  - 10개 테마 클러스터: 대장주 1개 + 연관주 2개. 종목별로 지표, 수급, 지지/저항, 손절 참고가를 보여 줍니다.
+  - 코스피 시총 1~10위 순서의 클러스터 10개: 대장주 1개 + 연관 코스닥 2개. 종목명 옆에 시총과 기업 이미지(긍정/중립/부정)를 보여 주고, 지표, 수급, 지지/저항, 손절 참고가도 함께 보여 줍니다.
   - AI 대장주 평가와 관찰 포인트, 지목 종목의 예상 밴드와 핵심 가격
   - 52주 신고가 근접·눌림목 Top 5
   - 전일 시나리오 적중 검증과 누적 정확도

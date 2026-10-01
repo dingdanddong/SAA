@@ -13,6 +13,16 @@ def eok(value: float | None, signed: bool = True) -> str:
     return f"{v:{sign},.1f}억"
 
 
+def cap(value: float | None) -> str:
+    """시가총액 원 → '115조 7,752억' / '5,295억'."""
+    if value is None:
+        return "-"
+    jo, eok = divmod(round(value / 100_000_000), 10_000)
+    if jo:
+        return f"{jo:,}조 {eok:,}억" if eok else f"{jo:,}조"
+    return f"{eok:,}억"
+
+
 def price(value: float | None) -> str:
     return "-" if value is None else f"{value:,.0f}"
 
