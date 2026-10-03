@@ -110,7 +110,7 @@ python3 main_pipeline.py --mode evening --dry-run --force   # 메일 없이 data
 
 `.github/workflows/saa-report.yml` 이 평일 08:30 모닝 브리프와 15:30 결산(KST)을 자동 실행합니다. Claude Code 클라우드 루틴은 Gmail SMTP 접속이 막혀 메일을 보낼 수 없어서 쓰지 않습니다.
 
-1. 저장소 Settings > Secrets and variables > Actions 에 `GEMINI_API_KEY`, `DART_API_KEY`, `GMAIL_USER`, `GMAIL_APP_PASSWORD`, `REPORT_TO` 를 등록합니다(`ADMIN_TO` 는 선택). 값은 따옴표와 공백 없이 넣습니다.
+1. 저장소 Settings > Secrets and variables > Actions > Repository secrets 에 `MY_SECRET_KEY` 하나를 만들고, 값에 `secrets.json` 파일 내용을 통째로 붙여넣습니다. 워크플로가 실행할 때 이 값으로 `secrets.json` 을 만들어 씁니다.
 2. Actions 탭 > SAA 리포트 > Run workflow 로 수동 실행합니다. 모드와 dry-run(메일 미발송, 리포트 HTML만 보관)을 고를 수 있습니다.
 
 - 전일 시나리오 검증 기록(`data/`)은 Actions 캐시로 이어받습니다. 7일 넘게 실행이 없으면 초기화됩니다.

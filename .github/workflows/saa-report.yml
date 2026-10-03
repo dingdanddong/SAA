@@ -26,12 +26,7 @@ jobs:
     env:
       MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.mode || (github.event.schedule == '30 23 * * 0-4' && 'morning' || 'evening') }}
       EXTRA_ARGS: ${{ github.event_name == 'workflow_dispatch' && format('--force {0}', inputs.dry_run && '--dry-run' || '') || '' }}
-      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-      DART_API_KEY: ${{ secrets.DART_API_KEY }}
-      GMAIL_USER: ${{ secrets.GMAIL_USER }}
-      GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
-      REPORT_TO: ${{ secrets.REPORT_TO }}
-      ADMIN_TO: ${{ secrets.ADMIN_TO }}
+      MY_SECRET_KEY: ${{ secrets.MY_SECRET_KEY }}
     steps:
       - uses: actions/checkout@v4
 
@@ -41,6 +36,20 @@ jobs:
           cache: pip
 
       - run: pip install -r requirements.txt
+
+      # Secret MY_SECRET_KEY 에는 secrets.json 전체 내용을 넣는다. 값은 출력하지 않고 키 이름만 점검한다
+      - name: secrets.json 생성·점검
+        run: |
+          printf '%s' "$MY_SECRET_KEY" > secrets.json
+          python - <<'EOF'
+          import json, sys
+          try:
+              d = json.load(open("secrets.json", encoding="utf-8"))
+          except ValueError:
+              sys.exit("MY_SECRET_KEY 가 비어 있거나 JSON 형식이 아닙니다 (secrets.json 전체 내용을 붙여넣어야 함)")
+          for k in ("GEMINI_API_KEY", "DART_API_KEY", "GMAIL_USER", "GMAIL_APP_PASSWORD", "REPORT_TO"):
+              print(k, "설정됨" if str(d.get(k) or "").strip() else "비어 있음")
+          EOF
 
       # 전일 시나리오 검증·모닝 갭 후보에 쓰는 data/ 를 실행 간에 이어받는다
       - name: 이전 실행 기록 복원
