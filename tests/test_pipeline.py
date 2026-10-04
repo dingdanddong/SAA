@@ -70,6 +70,8 @@ class FunnelTest(unittest.TestCase):
         self.assertEqual([r["name"] for r in themes[1]["related"]], ["반도체2", "반도체3"])   # 중복 없이 다음 순위
         self.assertEqual([r["name"] for r in themes[2]["related"]], ["증권1", "증권2"])       # 인접 업종 대체
         self.assertTrue(themes[2]["related"][0]["relation"].startswith("인접"))
+        self.assertEqual([t["leader"]["cap_rank"] for t in themes], [1, 2, 3])                 # 코스피 보통주 시총 순위
+        self.assertEqual([r["cap_rank"] for r in themes[0]["related"] + themes[2]["related"]], [1, 2, 5, 6])  # 코스닥 시총 순위
         codes = [s["code"] for s in funnel.selected_stocks(themes)]
         self.assertEqual((len(codes), len(set(codes))), (9, 9))
 
@@ -186,8 +188,8 @@ class ValidationTest(unittest.TestCase):
 
 class ReportTest(unittest.TestCase):
     def test_render_evening_ai_mode(self):
-        leader = stock("000010", "대장<주>")
-        rel = [stock("000020", "연관1"), stock("000030", "연관2")]
+        leader = stock("000010", "대장<주>", cap_rank=3)
+        rel = [stock("000020", "연관1", "KOSDAQ", cap_rank=12), stock("000030", "연관2")]
         themes = [{"theme_id": 1, "market": "KOSPI", "theme": "반도체", "leader": leader, "related": rel}]
         forecast = {"mode": "ai", "model": "gemini-test", "reason": "", "market_summary": "요약",
                     "themes": {1: {"focus_code": "000020", "focus_name": "연관1", "scenario": "상승 확산", "band_low": 49_000,
@@ -204,7 +206,8 @@ class ReportTest(unittest.TestCase):
         self.assertNotIn("축소 리포트", html)
         self.assertIn("관찰 문장", text)
         self.assertIn("코스피 시총 1위", html)
-        self.assertIn("시총 5,000억", html)
+        self.assertIn("시총 5,000억 (코스피 3위)", html)
+        self.assertIn("시총 5,000억 (코스닥 12위)", html)
         self.assertIn("이미지 긍정", html)
         self.assertIn("이미지 긍정", text)
 

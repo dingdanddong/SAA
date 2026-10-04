@@ -107,6 +107,19 @@ def _kosdaq_related(
     return out[: f["related_per_leader"]]
 
 
+def _cap_ranks(universe: list[dict]) -> dict[str, int]:
+    """시장별 보통주 시총 순위 (우선주·ETF·ETN 제외). 목록이 시총 하한 이상을 모두 담으므로 순위가 정확하다."""
+    ranks: dict[str, int] = {}
+    for market in ("KOSPI", "KOSDAQ"):
+        rows = sorted(
+            (r for r in universe if r["market"] == market and r.get("end_type", "stock") == "stock" and r["code"].endswith("0")),
+            key=lambda r: r.get("market_cap") or 0,
+            reverse=True,
+        )
+        ranks.update({r["code"]: i for i, r in enumerate(rows, 1)})
+    return ranks
+
+
 def kospi_top_clusters(universe: list[dict], excluded: set[str], resolver: IndustryResolver, cfg: dict) -> list[dict]:
     f = cfg["funnel"]
     by_code = {r["code"]: r for r in universe}
@@ -131,6 +144,9 @@ def kospi_top_clusters(universe: list[dict], excluded: set[str], resolver: Indus
         themes.append(
             {"theme_id": rank, "market": "KOSPI", "theme": name, "industry_key": key, "leader": leader, "related": related}
         )
+    ranks = _cap_ranks(universe)
+    for stock in selected_stocks(themes):
+        stock["cap_rank"] = ranks.get(stock["code"])
     log.info("코스피 시총 TOP %d: %d개 클러스터, %d종목", f["top_leaders"], len(themes), len(used))
     return themes
 

@@ -106,6 +106,14 @@ def _news_links(bundle: dict | None) -> str:
     return "<br>".join(items)
 
 
+def _cap_text(s: dict) -> str:
+    """'시총 11조 1,787억 (코스닥 3위)'"""
+    text = f"시총 {fmt.cap(s.get('market_cap'))}"
+    if s.get("cap_rank"):
+        text += f" ({'코스피' if s.get('market') == 'KOSPI' else '코스닥'} {s['cap_rank']}위)"
+    return text
+
+
 def _image_badge(img: dict | None) -> str:
     if not img:
         return ""
@@ -218,7 +226,7 @@ def _theme_card(th: dict, techs: dict, news: dict, fc: dict) -> str:
         rel = " · 인접 업종" if str(s.get("relation", "")).startswith("인접") else ""
         rows.append(
             [
-                f"<b>{_e(s['name'])}</b>{focus} <span style='color:{MUTED};font-size:12px'>시총 {_e(fmt.cap(s.get('market_cap')))}</span> "
+                f"<b>{_e(s['name'])}</b>{focus} <span style='color:{MUTED};font-size:12px'>{_e(_cap_text(s))}</span> "
                 f"{_image_badge(img)}<br><span style='color:{MUTED};font-size:11px'>{role} · {_e(s['code'])}{rel}{_e(_image_counts(img))}</span>",
                 f"{fmt.price(s.get('close'))}<br>{_chg(s.get('change_pct'))}",
                 f"{_e(t.get('tech_text', '지표 없음'))}<br><span style='color:{MUTED}'>{_e(t.get('supply_text', ''))}</span>",
@@ -303,7 +311,7 @@ def _evening_text(ctx: dict) -> str:
 
     def tag(x: dict) -> str:
         img = (news.get(x["code"]) or {}).get("image")
-        return f"시총 {fmt.cap(x.get('market_cap'))}, 이미지 {img['label'] if img else '-'}"
+        return f"{_cap_text(x)}, 이미지 {img['label'] if img else '-'}"
 
     for th in ctx["themes"]:
         leader = th["leader"]
