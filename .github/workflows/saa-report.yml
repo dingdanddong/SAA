@@ -47,7 +47,7 @@ jobs:
               d = json.load(open("secrets.json", encoding="utf-8"))
           except ValueError:
               sys.exit("MY_SECRET_KEY 가 비어 있거나 JSON 형식이 아닙니다 (secrets.json 전체 내용을 붙여넣어야 함)")
-          for k in ("GEMINI_API_KEY", "DART_API_KEY", "GMAIL_USER", "GMAIL_APP_PASSWORD", "REPORT_TO"):
+          for k in ("GEMINI_API_KEY", "DART_API_KEY", "GMAIL_USER", "GMAIL_APP_PASSWORD", "REPORT_TO", "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "GOOGLE_REFRESH_TOKEN"):
               print(k, "설정됨" if str(d.get(k) or "").strip() else "비어 있음")
           EOF
 

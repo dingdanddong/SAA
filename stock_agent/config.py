@@ -21,6 +21,9 @@ SECRET_KEYS = (
     "ADMIN_TO",
     "KRX_ID",
     "KRX_PW",
+    "GOOGLE_CLIENT_ID",
+    "GOOGLE_CLIENT_SECRET",
+    "GOOGLE_REFRESH_TOKEN",
 )
 
 

@@ -13,7 +13,7 @@ import traceback
 from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
 
-from .. import cache, funnel, mailer, report, validation
+from .. import cache, drive, funnel, mailer, report, validation
 from .. import market_calendar as cal
 from ..config import data_path
 from ..http import redact
@@ -40,21 +40,26 @@ class Orchestrator:
         self.quant_agent = QuantAgent(cfg)
         self.warnings: list[str] = []
         self.notes: list[str] = []
+        self.run_name: str | None = None
 
     # ------------------------------------------------------------------------
     def run(self) -> int:
         log.info("===== %s 파이프라인 시작 (dry_run=%s) =====", self.mode, self.dry_run)
+        store = drive.restore(self.cfg)
+        code = 0
         try:
             if self.mode == "morning":
                 self._run_morning()
             else:
                 self._run_evening()
             log.info("===== %s 파이프라인 정상 종료 =====", self.mode)
-            return 0
         except Exception as exc:  # noqa: BLE001
             log.error("파이프라인 실패: %s\n%s", redact(exc), redact(traceback.format_exc()))
             self._alert_admin(exc)
-            return 1
+            code = 1
+        if store and self.run_name and not self.dry_run:
+            drive.save(store, self.run_name, self.mode)
+        return code
 
     # ------------------------------------------------------------------------
     # 15:40 장마감 결산
@@ -288,7 +293,7 @@ class Orchestrator:
     # 저장·발송
     # ------------------------------------------------------------------------
     def _save_run(self, trade_date: str, ctx: dict, payloads: list[dict]) -> None:
-        keep = {k: ctx[k] for k in ("trade_date", "flow_date", "provider", "themes", "techs", "forecast", "picks", "warnings", "notes")}
+        keep = {k: ctx[k] for k in ("trade_date", "flow_date", "provider", "themes", "techs", "news", "forecast", "picks", "warnings", "notes")}
         keep["payloads"] = payloads
         path = data_path("runs", f"{trade_date}_evening.json")
         path.write_text(json.dumps(keep, ensure_ascii=False, indent=1, default=str), encoding="utf-8")
@@ -330,6 +335,7 @@ class Orchestrator:
     def _deliver(self, title: str, html: str, text: str, name: str) -> None:
         outbox = data_path("outbox", f"{name}.html")
         outbox.write_text(html, encoding="utf-8")
+        self.run_name = name
         log.info("리포트 저장: %s", outbox)
         if self.dry_run:
             log.info("dry-run: 메일 발송 생략")

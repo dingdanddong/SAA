@@ -116,6 +116,15 @@ python3 main_pipeline.py --mode evening --dry-run --force   # 메일 없이 data
 - 전일 시나리오 검증 기록(`data/`)은 Actions 캐시로 이어받습니다. 7일 넘게 실행이 없으면 초기화됩니다.
 - GitHub 예약 실행은 몇 분에서 수십 분 늦게 시작될 수 있고, 저장소에 60일간 활동이 없으면 예약이 꺼집니다.
 
+## 4-3. Google Drive 저장 (선택)
+
+`GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REFRESH_TOKEN` 이 모두 있으면 실행 끝에 내 드라이브의 `SAA` 폴더(앱이 직접 생성)에 올립니다. 하나라도 비어 있으면 건너뜁니다.
+
+- 올리는 파일: 리포트 HTML(`날짜_evening.html`, `날짜_morning.html`), 결과·뉴스 JSON(`날짜_evening.json`), 시나리오(`날짜_scenarios.json`), `accuracy_log.csv`, 상태 압축본(`saa_state.zip`).
+- `saa_state.zip`(runs, scenarios, accuracy_log.csv)은 다음 실행 시작 때 내려받아 복원합니다. Actions 러너가 매번 새로 시작해도 적중 기록이 이어집니다.
+- 처음 1회 `python3 drive_auth.py` 로 refresh token 을 받아 `secrets.json` 과 `MY_SECRET_KEY` 에 넣습니다. OAuth 동의 화면은 게시 상태를 "프로덕션"으로 해야 토큰이 7일 만에 만료되지 않습니다.
+- 드라이브 복원에 실패하면 그 실행은 저장도 건너뛰어 기존 기록을 덮어쓰지 않으며, 저장 실패는 리포트 발송을 막지 않습니다.
+
 ## 5. 리포트 구성
 
 - **08:30 모닝 브리프**

@@ -13,7 +13,7 @@ import ssl
 import sys
 from datetime import timedelta
 
-from stock_agent import http, llm, mailer
+from stock_agent import drive, http, llm, mailer
 from stock_agent import market_calendar as cal
 from stock_agent.config import load_config
 from stock_agent.sources import dart, kind, krx, naver
@@ -112,6 +112,15 @@ def main(argv: list[str] | None = None) -> int:
             failures += 1
     else:
         line(WARN, "Gmail", "GMAIL_USER / GMAIL_APP_PASSWORD 미설정")
+
+    if drive.configured(cfg):
+        try:
+            drive.Drive(cfg)
+            line(OK, "Google Drive", f"'{drive.FOLDER}' 폴더 연결 정상")
+        except Exception as exc:  # noqa: BLE001
+            line(WARN, "Google Drive", http.redact(exc)[:160])
+    else:
+        line(WARN, "Google Drive", "GOOGLE_* 미설정 — 드라이브 저장 생략")
 
     print("\n점검 완료" + (f" — 실패 {failures}건" if failures else ""))
     return 1 if failures else 0
