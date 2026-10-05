@@ -35,7 +35,8 @@ class Orchestrator:
         self.force = force
         self.use_llm = use_llm
         self.log_buffer = log_buffer
-        self.holidays = set(cfg.get("market_holidays", []))
+        year = cal.today_kst().year
+        self.holidays = set(cfg.get("market_holidays", [])) | cal.krx_holidays([year - 1, year, year + 1])
         self.news_agent = NewsAgent(cfg)
         self.quant_agent = QuantAgent(cfg)
         self.warnings: list[str] = []

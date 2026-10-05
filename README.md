@@ -96,7 +96,7 @@ python3 main_pipeline.py --mode evening --dry-run --force   # 메일 없이 data
 - **"즉시 실행"을 선택하고 "실행 시 알림"을 끕니다.** 완전 무인 구동을 위한 설정입니다.
 - 앱 확장(extension) 모드에서 메모리 한도로 멈추면, a-Shell 앱을 열어서 실행하는 옵션을 켭니다.
 - 휴장일에는 짧은 "휴장일 안내" 메일만 발송합니다.
-  - 모닝 브리프는 `config.json`의 `market_holidays`로 휴장일을 판단합니다. **매년 갱신이 필요합니다.**
+  - 모닝 브리프는 `config.json`의 `market_holidays`로 휴장일을 판단합니다. **공휴일·대체공휴일·근로자의 날·연말 휴장은 `holidays` 패키지로 매번 자동 계산하므로 갱신이 필요 없습니다(임시공휴일만 `market_holidays`에 직접 추가).**
   - 결산 리포트는 실제 마지막 거래일 데이터로 판단합니다.
 
 ### 무인 운영 점검 규칙
