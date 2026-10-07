@@ -69,10 +69,7 @@ class Orchestrator:
         today = cal.today_kst()
         trade_date, universe, provider = self._snapshot(today)
         if trade_date != cal.ymd(today) and not self.force:
-            self._send_notice(
-                f"휴장일 안내 ({today.isoformat()})",
-                [f"오늘은 거래가 없어 결산 리포트를 생략합니다. 마지막 거래일: {trade_date}"],
-            )
+            log.info("휴장일(%s) — 결산 리포트 생략, 안내 메일 없음. 마지막 거래일: %s", today.isoformat(), trade_date)
             return
 
         excluded = set(self.cfg["funnel"].get("exclude_codes", []))
@@ -206,7 +203,7 @@ class Orchestrator:
     def _run_morning(self) -> None:
         today = cal.today_kst()
         if not cal.is_trading_day(today, self.holidays) and not self.force:
-            self._send_notice(f"휴장일 안내 ({today.isoformat()})", ["오늘은 휴장일이라 모닝 브리프를 생략합니다."])
+            log.info("휴장일(%s) — 모닝 브리프 생략, 안내 메일 없음", today.isoformat())
             return
         prev_day = cal.previous_trading_day(today, self.holidays)
 
